@@ -9,6 +9,8 @@ namespace MediaInfo
     {
         static public Discord.Activity GetYoutubeMusicActivity(Discord.ActivityManager activityManager, string songTitle, string artistName, TimeSpan timeLeft)
         {
+            Random random = new();
+            string imageUrl = $"https://ytmrpalbumcoverserver.teop.me/album_image/current_album.jpg?{random.Next()}";
             return new Discord.Activity
             {
                 Type = Discord.ActivityType.Listening,
@@ -22,8 +24,8 @@ namespace MediaInfo
                 },
                 Assets =
                 {
-                    LargeImage = "https://teop.me/resources/logos/teop_rebrand.png",
-                    LargeText = "YouTube Music"
+                    LargeImage = imageUrl,
+                    LargeText = "Album Cover"
                 }
             };
         }
