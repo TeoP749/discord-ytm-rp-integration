@@ -14,6 +14,7 @@ namespace MediaInfo
         private static Discord.ActivityManager activityManager;
         private static Discord.LobbyManager lobbyManager;
 
+        private static readonly System.Threading.Mutex _albumCoverLock = new();
 
         private static GlobalSystemMediaTransportControlsSessionManager sessionManager;
         private static GlobalSystemMediaTransportControlsSession currentSession;
@@ -49,7 +50,7 @@ namespace MediaInfo
             currentSession = sessionManager.GetCurrentSession();
         }
 
-        static async Task Main(string[] args)
+        private static async Task Main(string[] args)
         {
             BuildDiscord();
             BuildMediaSession();
@@ -60,6 +61,8 @@ namespace MediaInfo
 
                 await SongInfoChanged();
             }
+
+            Task albumCoverServer = AlbumCoverServer.Serve(_albumCoverLock);
 
             // Keep the console application running
             Console.WriteLine("Listening for media changes...");
@@ -169,12 +172,12 @@ namespace MediaInfo
         {
             (string title, string artist, TimeSpan timeLeft, bool isPaused) = await GetCurrentSongInfo();
 
-            if (isPaused)
-            {
-                System.Console.WriteLine("Song is paused.");
-                ClearActivity();
-                return false;
-            }
+            // if (isPaused)
+            // {
+            //     System.Console.WriteLine("Song is paused.");
+            //     ClearActivity();
+            //     return false;
+            // }
 
             if (title != null)
             {
@@ -188,9 +191,12 @@ namespace MediaInfo
         private static async Task SaveCurrentAlbumImage(IRandomAccessStreamReference thumbnail)
         {
             using IRandomAccessStreamWithContentType streamWithContentType = await thumbnail.OpenReadAsync();
-            using var fileStream = new FileStream("./album_image/current_album.jpg", FileMode.Create, FileAccess.Write);
-            using var inputStream = streamWithContentType.AsStreamForRead();
-            await inputStream.CopyToAsync(fileStream);
+            lock (_albumCoverLock)
+            {
+                using var fileStream = new FileStream("./album_image/current_album.jpg", FileMode.Create, FileAccess.Write);
+                using var inputStream = streamWithContentType.AsStreamForRead();
+                inputStream.CopyTo(fileStream);
+            }
         }
     }
 }
