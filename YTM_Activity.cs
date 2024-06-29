@@ -7,7 +7,7 @@ namespace MediaInfo
 {
     class YTM_Activity
     {
-        static public Discord.Activity GetYoutubeMusicActivity(Discord.ActivityManager activityManager, string songTitle, string artistName, TimeSpan timeLeft)
+        static public Discord.Activity GetYoutubeMusicActivity(string songTitle, string artistName, TimeSpan position, TimeSpan duration)
         {
             Random random = new();
             string imageUrl = $"https://ytmrpalbumcoverserver.teop.me/album_image/current_album.jpg?{random.Next()}";
@@ -17,10 +17,11 @@ namespace MediaInfo
                 Details = songTitle,
                 State = artistName,
                 Instance = true,
+                SupportedPlatforms = 1,
                 Timestamps =
                 {
-                    Start =  DateTimeOffset.Now.ToUnixTimeSeconds(),
-                    End = DateTimeOffset.Now.Add(timeLeft).ToUnixTimeSeconds()
+                    Start =  DateTimeOffset.Now.ToUnixTimeSeconds() - (long)position.TotalSeconds,
+                    End = DateTimeOffset.Now.Add(duration - position).ToUnixTimeSeconds()
                 },
                 Assets =
                 {

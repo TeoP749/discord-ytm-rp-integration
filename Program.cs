@@ -35,6 +35,18 @@ namespace MediaInfo
 
             applicationManager = discord.GetApplicationManager();
             activityManager = discord.GetActivityManager();
+            // activityManager.RegisterCommand("start chrome https://music.youtube.com");
+
+            // activityManager.OnActivityJoin += (secret) =>
+            // {
+            //     Console.WriteLine("Joining {0}", secret);
+            // };
+
+            // activityManager.OnActivityJoinRequest += (ref Discord.User user) =>
+            // {
+            //     Console.WriteLine("OnJoinRequest {0} {1}", user.Username, user.Id);
+            // };
+
             lobbyManager = discord.GetLobbyManager();
 
             // Get the current locale. This can be used to determine what text or audio the user wants.
@@ -57,9 +69,8 @@ namespace MediaInfo
             if (currentSession != null)
             {
                 currentSession.MediaPropertiesChanged += Session_MediaPropertiesChanged;
-                currentSession.TimelinePropertiesChanged += Sessoin_TimelinePropertiesChanged;
-
-                await SongInfoChanged();
+                currentSession.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+                await SongInfoChanged(true);
             }
 
             Task albumCoverServer = AlbumCoverServer.Serve(_albumCoverLock);
@@ -77,13 +88,14 @@ namespace MediaInfo
             }
             finally
             {
+                ClearActivity();
                 discord.Dispose();
             }
         }
 
-        private static void UpdateActivity(string songTitle, string artistName, TimeSpan timeLeft)
+        private static void UpdateActivity(string songTitle, string artistName, TimeSpan position, TimeSpan duration)
         {
-            var activity = YTM_Activity.GetYoutubeMusicActivity(activityManager, songTitle, artistName, timeLeft);
+            var activity = YTM_Activity.GetYoutubeMusicActivity(songTitle, artistName, position, duration);
             {
                 activityManager.UpdateActivity(activity, result =>
                 {
@@ -105,7 +117,7 @@ namespace MediaInfo
             {
                 if (result == Discord.Result.Ok)
                 {
-                    Console.WriteLine("Activity cleared successfully.");
+                    Console.WriteLine("Activity cleared.");
                 }
                 else
                 {
@@ -116,24 +128,24 @@ namespace MediaInfo
 
         private static async void Session_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
         {
-            System.Console.WriteLine("Media properties changed.");
+            System.Console.WriteLine("INFO: media properties changed");
             await SongInfoChanged();
         }
 
-        private static async void Sessoin_TimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args)
+        private static async void Session_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
         {
-            System.Console.WriteLine("Timeline properties changed.");
+            System.Console.WriteLine("INFO: playback info changed");
             await SongInfoChanged();
         }
 
         private static void SessionManager_CurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args)
         {
-            System.Console.WriteLine("Current session changed.");
+            System.Console.WriteLine("INFO: session changed");
             // Unsubscribe from previous session's events
             if (currentSession != null)
             {
                 currentSession.MediaPropertiesChanged -= Session_MediaPropertiesChanged;
-                currentSession.TimelinePropertiesChanged -= Sessoin_TimelinePropertiesChanged;
+                currentSession.PlaybackInfoChanged -= Session_PlaybackInfoChanged;
             }
 
             // Update current session
@@ -142,8 +154,9 @@ namespace MediaInfo
             {
                 // Subscribe to media properties changed event
                 currentSession.MediaPropertiesChanged += Session_MediaPropertiesChanged;
-                // Subscribe to timeline properties changed event
-                currentSession.TimelinePropertiesChanged += Sessoin_TimelinePropertiesChanged;
+                // Subscribe to playback info changed event
+                currentSession.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+                System.Console.WriteLine("Source: " + currentSession.SourceAppUserModelId);
             }
             else
             {
@@ -151,37 +164,42 @@ namespace MediaInfo
             }
         }
 
-        private static async Task<(string, string, TimeSpan, bool)> GetCurrentSongInfo()
+        private static async Task<(string, string, TimeSpan, TimeSpan, bool)> GetCurrentSongInfo()
         {
             if (currentSession == null)
             {
-                return (null, null, TimeSpan.Zero, false);
+                return (null, null, TimeSpan.Zero, TimeSpan.Zero, false);
             }
 
             var mediaProperties = await currentSession.TryGetMediaPropertiesAsync();
             var timelineProperties = currentSession.GetTimelineProperties();
             var title = mediaProperties.Title;
             var artist = mediaProperties.Artist;
-            var timeLeft = timelineProperties.EndTime - timelineProperties.Position;
-            var isPaused = currentSession.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused;
+            var position = timelineProperties.Position;
+            var duration = timelineProperties.EndTime - timelineProperties.StartTime;
+            var isPaused = currentSession.GetPlaybackInfo() != null && currentSession.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused;
             await SaveCurrentAlbumImage(mediaProperties.Thumbnail);
-            return (title, artist, timeLeft, isPaused);
+            return (title, artist, position, duration, isPaused);
         }
 
-        private static async Task<bool> SongInfoChanged()
+        private static async Task<bool> SongInfoChanged(bool initial = false)
         {
-            (string title, string artist, TimeSpan timeLeft, bool isPaused) = await GetCurrentSongInfo();
+            (string title, string artist, TimeSpan position, TimeSpan duration, bool isPaused) = await GetCurrentSongInfo();
 
-            // if (isPaused)
-            // {
-            //     System.Console.WriteLine("Song is paused.");
-            //     ClearActivity();
-            //     return false;
-            // }
+            if (isPaused)
+            {
+                if (!initial)
+                {
+                    System.Console.WriteLine("Song was paused. Clearing activity.");
+                    ClearActivity();
+                }
+
+                return false;
+            }
 
             if (title != null)
             {
-                UpdateActivity(title, artist, timeLeft);
+                UpdateActivity(title, artist, position, duration);
                 return true;
             }
 
@@ -190,6 +208,10 @@ namespace MediaInfo
 
         private static async Task SaveCurrentAlbumImage(IRandomAccessStreamReference thumbnail)
         {
+            if (thumbnail == null)
+            {
+                return;
+            }
             using IRandomAccessStreamWithContentType streamWithContentType = await thumbnail.OpenReadAsync();
             lock (_albumCoverLock)
             {
