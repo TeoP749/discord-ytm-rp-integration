@@ -3,3 +3,6 @@
 MediaInfo.csproj
 MediaInfo.sln
 /obj
+tunnel.bat
+start.bat
+rpc.bat
