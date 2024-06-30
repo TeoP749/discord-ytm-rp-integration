@@ -70,7 +70,8 @@ namespace MediaInfo
             {
                 currentSession.MediaPropertiesChanged += Session_MediaPropertiesChanged;
                 currentSession.PlaybackInfoChanged += Session_PlaybackInfoChanged;
-                await SongInfoChanged(true);
+                currentSession.TimelinePropertiesChanged += Session_TimelinePropertiesChanged;
+                await SongInfoChanged(true, false);
             }
 
             Task albumCoverServer = AlbumCoverServer.Serve(_albumCoverLock);
@@ -99,11 +100,11 @@ namespace MediaInfo
             {
                 if (result == Discord.Result.Ok)
                 {
-                    Console.WriteLine("Activity updated successfully.");
+                    Console.WriteLine("INFO: updated activity.");
                 }
                 else
                 {
-                    Console.WriteLine("Activity failed to update.");
+                    Console.WriteLine("INFO: failed to update activity.");
                 }
             });
         }
@@ -114,11 +115,11 @@ namespace MediaInfo
             {
                 if (result == Discord.Result.Ok)
                 {
-                    Console.WriteLine("Activity cleared.");
+                    Console.WriteLine("INFO: activity cleared.");
                 }
                 else
                 {
-                    Console.WriteLine("Activity failed to clear.");
+                    Console.WriteLine("INFO: failed to clear activity.");
                 }
             });
         }
@@ -126,13 +127,19 @@ namespace MediaInfo
         private static async void Session_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
         {
             System.Console.WriteLine("INFO: media properties changed");
-            await SongInfoChanged();
+            await SongInfoChanged(false, true);
         }
 
         private static async void Session_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
         {
             System.Console.WriteLine("INFO: playback info changed");
-            await SongInfoChanged();
+            await SongInfoChanged(false, false);
+        }
+
+        private static async void Session_TimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args)
+        {
+            System.Console.WriteLine("INFO: timeline properties changed");
+            await SongInfoChanged(false, false);
         }
 
         private static void SessionManager_CurrentSessionChanged(GlobalSystemMediaTransportControlsSessionManager sender, CurrentSessionChangedEventArgs args)
@@ -143,6 +150,7 @@ namespace MediaInfo
             {
                 currentSession.MediaPropertiesChanged -= Session_MediaPropertiesChanged;
                 currentSession.PlaybackInfoChanged -= Session_PlaybackInfoChanged;
+                currentSession.TimelinePropertiesChanged -= Session_TimelinePropertiesChanged;
             }
 
             // Update current session
@@ -153,6 +161,8 @@ namespace MediaInfo
                 currentSession.MediaPropertiesChanged += Session_MediaPropertiesChanged;
                 // Subscribe to playback info changed event
                 currentSession.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+                // Subscribe to timeline properties changed event
+                currentSession.TimelinePropertiesChanged += Session_TimelinePropertiesChanged;
                 System.Console.WriteLine("Source: " + currentSession.SourceAppUserModelId);
             }
             else
@@ -161,11 +171,11 @@ namespace MediaInfo
             }
         }
 
-        private static async Task<(string, string, string, TimeSpan, TimeSpan, bool, IRandomAccessStreamReference)> GetCurrentSongInfo()
+        private static async Task<(string, string, string, long, long, bool, IRandomAccessStreamReference)> GetCurrentSongInfo()
         {
             if (currentSession == null)
             {
-                return (null, null, null, TimeSpan.Zero, TimeSpan.Zero, false, null);
+                return (null, null, null, 0, 0, false, null);
             }
 
             var mediaProperties = await currentSession.TryGetMediaPropertiesAsync();
@@ -173,17 +183,17 @@ namespace MediaInfo
             var title = mediaProperties.Title;
             var artist = mediaProperties.Artist;
             var album = mediaProperties.AlbumTitle;
-            var position = timelineProperties.Position;
-            var duration = timelineProperties.EndTime - timelineProperties.StartTime;
+            var startTime = new DateTimeOffset(DateTimeOffset.Now.DateTime - timelineProperties.Position);
+            var endTime = new DateTimeOffset(DateTime.Now + timelineProperties.EndTime - timelineProperties.Position);
             var isPaused = currentSession.GetPlaybackInfo() != null && currentSession.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused;
             var thumbnail = mediaProperties.Thumbnail;
-            return (title, artist, album, position, duration, isPaused, thumbnail);
+            return (title, artist, album, startTime.ToUnixTimeSeconds(), endTime.ToUnixTimeMilliseconds(), isPaused, thumbnail);
         }
 
-        private static async Task<bool> SongInfoChanged(bool initial = false)
+        private static async Task<bool> SongInfoChanged(bool initial, bool newSong)
         {
-            var (title, artist, album, position, duration, isPaused, thumbnail) = await GetCurrentSongInfo();
-
+            var (title, artist, album, startTime, endTime, isPaused, thumbnail) = await GetCurrentSongInfo();
+            startTime = newSong ? DateTimeOffset.Now.ToUnixTimeSeconds() : startTime;
             if (isPaused)
             {
                 if (!initial)
@@ -197,7 +207,7 @@ namespace MediaInfo
 
             if (title != null)
             {
-                var (activity, guid) = YTM_Activity.GetYoutubeMusicActivity(title, artist, position, duration);
+                var (activity, guid) = YTM_Activity.GetYoutubeMusicActivity(title, artist, startTime, endTime);
                 UpdateActivity(activity);
                 await SaveCurrentAlbumImage(thumbnail, guid);
                 return true;
