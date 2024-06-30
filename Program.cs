@@ -93,22 +93,19 @@ namespace MediaInfo
             }
         }
 
-        private static void UpdateActivity(string songTitle, string artistName, TimeSpan position, TimeSpan duration)
+        private static void UpdateActivity(Discord.Activity activity)
         {
-            var activity = YTM_Activity.GetYoutubeMusicActivity(songTitle, artistName, position, duration);
+            activityManager.UpdateActivity(activity, result =>
             {
-                activityManager.UpdateActivity(activity, result =>
+                if (result == Discord.Result.Ok)
                 {
-                    if (result == Discord.Result.Ok)
-                    {
-                        Console.WriteLine("Activity updated successfully.");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Activity failed to update.");
-                    }
-                });
-            }
+                    Console.WriteLine("Activity updated successfully.");
+                }
+                else
+                {
+                    Console.WriteLine("Activity failed to update.");
+                }
+            });
         }
 
         private static void ClearActivity()
@@ -164,27 +161,28 @@ namespace MediaInfo
             }
         }
 
-        private static async Task<(string, string, TimeSpan, TimeSpan, bool)> GetCurrentSongInfo()
+        private static async Task<(string, string, string, TimeSpan, TimeSpan, bool, IRandomAccessStreamReference)> GetCurrentSongInfo()
         {
             if (currentSession == null)
             {
-                return (null, null, TimeSpan.Zero, TimeSpan.Zero, false);
+                return (null, null, null, TimeSpan.Zero, TimeSpan.Zero, false, null);
             }
 
             var mediaProperties = await currentSession.TryGetMediaPropertiesAsync();
             var timelineProperties = currentSession.GetTimelineProperties();
             var title = mediaProperties.Title;
             var artist = mediaProperties.Artist;
+            var album = mediaProperties.AlbumTitle;
             var position = timelineProperties.Position;
             var duration = timelineProperties.EndTime - timelineProperties.StartTime;
             var isPaused = currentSession.GetPlaybackInfo() != null && currentSession.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused;
-            await SaveCurrentAlbumImage(mediaProperties.Thumbnail);
-            return (title, artist, position, duration, isPaused);
+            var thumbnail = mediaProperties.Thumbnail;
+            return (title, artist, album, position, duration, isPaused, thumbnail);
         }
 
         private static async Task<bool> SongInfoChanged(bool initial = false)
         {
-            (string title, string artist, TimeSpan position, TimeSpan duration, bool isPaused) = await GetCurrentSongInfo();
+            var (title, artist, album, position, duration, isPaused, thumbnail) = await GetCurrentSongInfo();
 
             if (isPaused)
             {
@@ -199,14 +197,16 @@ namespace MediaInfo
 
             if (title != null)
             {
-                UpdateActivity(title, artist, position, duration);
+                var (activity, guid) = YTM_Activity.GetYoutubeMusicActivity(title, artist, position, duration);
+                UpdateActivity(activity);
+                await SaveCurrentAlbumImage(thumbnail, guid);
                 return true;
             }
 
             return false;
         }
 
-        private static async Task SaveCurrentAlbumImage(IRandomAccessStreamReference thumbnail)
+        private static async Task SaveCurrentAlbumImage(IRandomAccessStreamReference thumbnail, Guid guid)
         {
             if (thumbnail == null)
             {
@@ -215,6 +215,7 @@ namespace MediaInfo
             using IRandomAccessStreamWithContentType streamWithContentType = await thumbnail.OpenReadAsync();
             lock (_albumCoverLock)
             {
+                AlbumCoverServer.SetAlbumCoverGuid(guid);
                 using var fileStream = new FileStream("./album_image/current_album.jpg", FileMode.Create, FileAccess.Write);
                 using var inputStream = streamWithContentType.AsStreamForRead();
                 inputStream.CopyTo(fileStream);

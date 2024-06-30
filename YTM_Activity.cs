@@ -2,16 +2,16 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Media.Control;
-
+using System.Diagnostics;
 namespace MediaInfo
 {
     class YTM_Activity
     {
-        static public Discord.Activity GetYoutubeMusicActivity(string songTitle, string artistName, TimeSpan position, TimeSpan duration)
+        static public (Discord.Activity, Guid) GetYoutubeMusicActivity(string songTitle, string artistName, TimeSpan position, TimeSpan duration)
         {
-            Random random = new();
-            string imageUrl = $"https://ytmrpalbumcoverserver.teop.me/album_image/current_album.jpg?{random.Next()}";
-            return new Discord.Activity
+            Guid guid = Guid.NewGuid();
+            string imageUrl = $"https://ytmrpalbumcoverserver.teop.me/album_image/current_album.jpg?id={guid.ToString()}";
+            return (new Discord.Activity
             {
                 Type = Discord.ActivityType.Listening,
                 Details = songTitle,
@@ -26,9 +26,11 @@ namespace MediaInfo
                 Assets =
                 {
                     LargeImage = imageUrl,
-                    LargeText = "Album Cover"
+                    LargeText = "Album Cover",
+                    SmallImage = "ytm_logo",
+                    SmallText = "YouTube Music"
                 }
-            };
+            }, guid);
         }
     }
 }

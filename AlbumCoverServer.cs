@@ -7,6 +7,14 @@ using System.Threading.Tasks;
 public class AlbumCoverServer
 {
     private static readonly string _albumCoverPath = "./album_image/current_album.jpg";
+
+    private static Guid _albumCoverGuid;
+
+    public static void SetAlbumCoverGuid(Guid guid)
+    {
+        _albumCoverGuid = guid;
+    }
+
     public static async Task Serve(Mutex _albumCoverLock)
     {
         lock (_albumCoverLock)
@@ -27,8 +35,7 @@ public class AlbumCoverServer
             HttpListenerContext context = await listener.GetContextAsync();
             HttpListenerRequest request = context.Request;
             HttpListenerResponse response = context.Response;
-            
-            if (!request.Url.AbsolutePath.StartsWith("/album_image/current_album.jpg"))
+            if (!request.Url.AbsolutePath.Equals("/album_image/current_album.jpg"))
             {
                 System.Console.WriteLine(request.Url.AbsolutePath);
                 System.Console.WriteLine("Invalid request path.");
@@ -36,11 +43,21 @@ public class AlbumCoverServer
                 response.Close();
                 continue;
             }
-            
-            System.Console.WriteLine("Serving album cover.");
-            response.ContentType = "image/jpeg";
+
+
             lock (_albumCoverLock)
             {
+                if(!request.Url.Query.Equals($"?id={_albumCoverGuid.ToString()}"))
+                {
+                    System.Console.WriteLine("Invalid GUID.");
+                    response.StatusCode = 404;
+                    response.Close();
+                    continue;
+                }
+                
+                System.Console.WriteLine("Serving album cover.");
+                response.ContentType = "image/jpeg";
+
                 byte[] buffer = File.ReadAllBytes(_albumCoverPath);
                 response.ContentLength64 = buffer.Length;
                 response.OutputStream.Write(buffer);
