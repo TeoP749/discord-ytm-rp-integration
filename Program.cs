@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -208,8 +208,8 @@ namespace MediaInfo
             if (title != null)
             {
                 var (activity, guid) = YTM_Activity.GetYoutubeMusicActivity(title, artist, startTime, endTime);
-                UpdateActivity(activity);
                 await SaveCurrentAlbumImage(thumbnail, guid);
+                UpdateActivity(activity);
                 return true;
             }
 
